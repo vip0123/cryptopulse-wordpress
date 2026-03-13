@@ -74,10 +74,16 @@ function cryptopulse_settings_page() {
         
         <h2>Troubleshooting</h2>
         <ul>
-            <li><strong>No whale data?</strong> Check error logs (Enable WP_DEBUG in wp-config.php)</li>
+            <li><strong>No whale data?</strong> Check error logs (Enable WP_DEBUG in wp-config.php) or use Test API button above</li>
             <li><strong>Shortcodes not showing?</strong> Make sure plugin is activated in Plugins menu</li>
             <li><strong>SSL errors?</strong> The plugin auto-skips SSL verification</li>
+            <li><strong>Network blocked?</strong> Your WordPress server may not be able to reach cryptopulse.uno. Contact your host.</li>
         </ul>
+        
+        <h2>🧪 Diagnostic Info</h2>
+        <p>WordPress can access remote URLs: <?php echo (function_exists('wp_remote_get') ? '✅ Yes' : '❌ No'); ?></p>
+        <p>cURL installed: <?php echo (function_exists('curl_version') ? '✅ Yes' : '❌ No'); ?></p>
+        <p>PHP allow_url_fopen: <?php echo (ini_get('allow_url_fopen') ? '✅ Yes' : '❌ No'); ?></p>
     </div>
     <?php
 }
@@ -106,15 +112,42 @@ function cryptopulse_api_get($path) {
         'headers' => $headers,
         'timeout' => 15,
         'sslverify' => false,  // Handle SSL issues
+        'blocking' => true,
     ];
 
+    // Try wp_remote_get first
     $response = wp_remote_get($base . $path, $args);
+    
     if (is_wp_error($response)) {
-        error_log('CryptoPulse API Error: ' . $response->get_error_message() . ' | Path: ' . $path);
-        return null;
+        error_log('CryptoPulse WP Error: ' . $response->get_error_message() . ' | Trying cURL fallback...');
+        
+        // Fallback: Direct cURL if wp_remote_get fails
+        if (function_exists('curl_init')) {
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $base . $path,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 15,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => false,
+                CURLOPT_HTTPHEADER => array_map(fn($k, $v) => "$k: $v", array_keys($headers), $headers),
+                CURLOPT_USERAGENT => 'CryptoPulse-WP/' . CRYPTOPULSE_VERSION,
+            ]);
+            $body = curl_exec($ch);
+            $curl_error = curl_error($ch);
+            curl_close($ch);
+            
+            if ($curl_error) {
+                error_log('CryptoPulse cURL Error: ' . $curl_error . ' | Path: ' . $path);
+                return null;
+            }
+        } else {
+            return null;
+        }
+    } else {
+        $body = wp_remote_retrieve_body($response);
     }
 
-    $body = wp_remote_retrieve_body($response);
     $data = json_decode($body, true);
     
     if (!$data) {
