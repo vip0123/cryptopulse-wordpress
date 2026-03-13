@@ -29,17 +29,38 @@ add_action('admin_init', function() {
 function cryptopulse_settings_page() {
     $api_key = get_option('cryptopulse_api_key', '');
     $base_url = get_option('cryptopulse_base_url', 'https://cryptopulse.uno');
+    $test_result = null;
+    
+    if (isset($_POST['cp_test_api'])) {
+        check_admin_referer('cp_test_nonce');
+        $test_data = cryptopulse_api_get('/api/whales?limit=1');
+        $test_result = $test_data ? 'success' : 'failed';
+    }
     ?>
     <div class="wrap">
         <h1>CryptoPulse Settings</h1>
+        
+        <?php if ($test_result === 'success'): ?>
+            <div class="notice notice-success"><p>✅ API connection successful!</p></div>
+        <?php elseif ($test_result === 'failed'): ?>
+            <div class="notice notice-error"><p>❌ API connection failed. Check error logs: wp-content/debug.log</p></div>
+        <?php endif; ?>
+        
         <form method="post" action="options.php">
             <?php settings_fields('cryptopulse_options'); ?>
             <table class="form-table">
                 <tr><th>API Key</th><td><input type="text" name="cryptopulse_api_key" value="<?php echo esc_attr($api_key); ?>" class="regular-text" /><p class="description">Get your free key at <a href="https://cryptopulse.uno/pricing" target="_blank">cryptopulse.uno/pricing</a></p></td></tr>
-                <tr><th>Base URL</th><td><input type="text" name="cryptopulse_base_url" value="<?php echo esc_attr($base_url); ?>" class="regular-text" /></td></tr>
+                <tr><th>Base URL</th><td><input type="text" name="cryptopulse_base_url" value="<?php echo esc_attr($base_url); ?>" class="regular-text" /><p class="description">Default: https://cryptopulse.uno</p></td></tr>
             </table>
             <?php submit_button(); ?>
         </form>
+        
+        <form method="post" style="margin-top: 20px;">
+            <?php wp_nonce_field('cp_test_nonce'); ?>
+            <input type="hidden" name="cp_test_api" value="1" />
+            <button type="submit" class="button button-secondary">🧪 Test API Connection</button>
+        </form>
+        
         <h2>Shortcodes</h2>
         <table class="widefat" style="max-width:700px">
             <tr><td><code>[cryptopulse_whales]</code></td><td>Live whale feed with all chains</td></tr>
@@ -50,6 +71,13 @@ function cryptopulse_settings_page() {
             <tr><td><code>[cryptopulse_dex]</code></td><td>DEX swap feed</td></tr>
             <tr><td><code>[cryptopulse_bot]</code></td><td>Alpha Bot performance card</td></tr>
         </table>
+        
+        <h2>Troubleshooting</h2>
+        <ul>
+            <li><strong>No whale data?</strong> Check error logs (Enable WP_DEBUG in wp-config.php)</li>
+            <li><strong>Shortcodes not showing?</strong> Make sure plugin is activated in Plugins menu</li>
+            <li><strong>SSL errors?</strong> The plugin auto-skips SSL verification</li>
+        </ul>
     </div>
     <?php
 }
@@ -68,12 +96,32 @@ add_action('wp_enqueue_scripts', function() {
 function cryptopulse_api_get($path) {
     $base = rtrim(get_option('cryptopulse_base_url', 'https://cryptopulse.uno'), '/');
     $key = get_option('cryptopulse_api_key', '');
-    $headers = ['Content-Type' => 'application/json'];
+    $headers = [
+        'Content-Type' => 'application/json',
+        'User-Agent' => 'CryptoPulse-WP/' . CRYPTOPULSE_VERSION,
+    ];
     if ($key) $headers['x-api-key'] = $key;
 
-    $response = wp_remote_get($base . $path, ['headers' => $headers, 'timeout' => 15]);
-    if (is_wp_error($response)) return null;
-    return json_decode(wp_remote_retrieve_body($response), true);
+    $args = [
+        'headers' => $headers,
+        'timeout' => 15,
+        'sslverify' => false,  // Handle SSL issues
+    ];
+
+    $response = wp_remote_get($base . $path, $args);
+    if (is_wp_error($response)) {
+        error_log('CryptoPulse API Error: ' . $response->get_error_message() . ' | Path: ' . $path);
+        return null;
+    }
+
+    $body = wp_remote_retrieve_body($response);
+    $data = json_decode($body, true);
+    
+    if (!$data) {
+        error_log('CryptoPulse API Invalid JSON: ' . substr($body, 0, 200) . ' | Path: ' . $path);
+    }
+    
+    return $data;
 }
 
 function cryptopulse_format_usd($val) {
