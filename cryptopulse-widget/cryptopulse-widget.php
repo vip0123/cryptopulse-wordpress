@@ -296,20 +296,25 @@ add_shortcode('cryptopulse_dex', function($atts) {
     $html .= '<div class="cp-header"><span>🔄 DEX Swaps</span><span class="cp-badge">' . number_format($total) . ' total</span></div>';
 
     foreach (array_slice($swaps, 0, intval($atts['limit'])) as $s) {
-        $tokenIn = esc_html($s['tokenIn'] ?? $s['token_in'] ?? '?');
-        $tokenOut = esc_html($s['tokenOut'] ?? $s['token_out'] ?? '?');
-        $value = cryptopulse_format_usd($s['valueUSD'] ?? $s['usd_value'] ?? 0);
+        // tokenIn/tokenOut can be objects {symbol,name,amount} or strings
+        $tIn = $s['tokenIn'] ?? $s['token_in'] ?? '?';
+        $tokenIn = is_array($tIn) ? esc_html($tIn['symbol'] ?? '?') : esc_html($tIn);
+        $tOut = $s['tokenOut'] ?? $s['token_out'] ?? '?';
+        $tokenOut = is_array($tOut) ? esc_html($tOut['symbol'] ?? '?') : esc_html($tOut);
+        $value = cryptopulse_format_usd($s['estimatedUSD'] ?? $s['valueUSD'] ?? $s['usd_value'] ?? 0);
         $wallet = esc_html($s['walletLabel'] ?? (isset($s['wallet']) ? substr($s['wallet'], 0, 10) . '...' : '?'));
         $dex = esc_html($s['dex'] ?? $s['protocol'] ?? '');
         $chain = esc_html($s['chainName'] ?? $s['chain'] ?? '');
+        $direction = strtoupper($s['direction'] ?? 'swap');
+        $dirIcon = ($s['direction'] === 'buy') ? '🟢' : (($s['direction'] === 'sell') ? '🔴' : '🔄');
         $time = isset($s['timestamp']) ? cryptopulse_time_ago($s['timestamp']) : '';
 
         $html .= '<div class="cp-tx">';
-        $html .= '<div class="cp-tx-icon">🔄</div>';
+        $html .= '<div class="cp-tx-icon">' . $dirIcon . '</div>';
         $html .= '<div class="cp-tx-body">';
-        $html .= '<div class="cp-tx-main">' . $tokenIn . ' → ' . $tokenOut . ' <span class="cp-muted">(' . $value . ')</span></div>';
+        $html .= '<div class="cp-tx-main"><strong>' . $direction . '</strong> ' . $tokenIn . ' <span class="cp-muted">(' . $value . ')</span></div>';
         $html .= '<div class="cp-tx-meta">' . $wallet;
-        if ($dex) $html .= ' on ' . $dex;
+        if ($dex && $dex !== 'Direct Transfer') $html .= ' on ' . $dex;
         if ($chain) $html .= ' <span class="cp-chain">• ' . $chain . '</span>';
         $html .= '</div>';
         $html .= '</div>';
@@ -350,6 +355,31 @@ add_shortcode('cryptopulse_bot', function($atts) {
     $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Profit Factor</div><div class="cp-stat-value">' . number_format($pf, 2) . '</div></div>';
     $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Trades</div><div class="cp-stat-value">' . intval($trades) . '</div></div>';
     $html .= '</div>';
+
+    // Latest signals
+    $sigData = cryptopulse_api_get('/api/bot/signals');
+    $signals = $sigData['signals'] ?? [];
+    if (!empty($signals)) {
+        $sellSignals = array_filter($signals, function($s) { return strtoupper($s['signal'] ?? '') === 'SELL'; });
+        $showSignals = array_slice(array_values($sellSignals), 0, 3);
+        if (!empty($showSignals)) {
+            $html .= '<div class="cp-signals"><div class="cp-evo-title">🔴 Latest Sell Signals</div>';
+            foreach ($showSignals as $sig) {
+                $symbol = esc_html($sig['symbol'] ?? '');
+                $price = number_format(floatval($sig['price'] ?? 0), $sig['price'] < 1 ? 6 : 2);
+                $conf = esc_html($sig['confidence'] ?? '');
+                $time = esc_html($sig['timestamp'] ?? '');
+                $html .= '<div class="cp-signal-row">';
+                $html .= '<span class="cp-signal-type" style="color:#ef4444;font-weight:700">SELL</span> ';
+                $html .= '<span class="cp-signal-symbol">' . $symbol . '</span> ';
+                $html .= '<span class="cp-muted">@ $' . $price . '</span> ';
+                $html .= '<span class="cp-signal-conf">' . $conf . '</span>';
+                if ($time) $html .= ' <span class="cp-time">' . $time . '</span>';
+                $html .= '</div>';
+            }
+            $html .= '</div>';
+        }
+    }
 
     // Evolution history
     $evo = $data['evolution']['history'] ?? [];

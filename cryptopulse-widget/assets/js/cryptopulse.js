@@ -1,26 +1,39 @@
-/* CryptoPulse Widget JS v1.1.0 */
+/* CryptoPulse Widget JS v1.2.0 */
 (function() {
   'use strict';
 
-  // Wallet lookup handler
-  window.cryptopulseLookup = function(btn) {
-    var widget = btn.closest('.cp-widget');
-    var input = widget.querySelector('.cp-input');
-    var result = widget.querySelector('.cp-wallet-result');
+  var BASE = (window.CryptoPulseWP && CryptoPulseWP.baseUrl) || 'https://cryptopulse.uno';
+  var KEY = (window.CryptoPulseWP && CryptoPulseWP.apiKey) || '';
+
+  function getHeaders() {
+    var h = { 'Content-Type': 'application/json' };
+    if (KEY) h['x-api-key'] = KEY;
+    return h;
+  }
+
+  // Wallet lookup — accepts widget ID string or button element
+  window.cryptopulseLookup = function(idOrBtn) {
+    var widget, input, result;
+    if (typeof idOrBtn === 'string') {
+      widget = document.getElementById(idOrBtn);
+      input = document.getElementById(idOrBtn + '-input');
+      result = document.getElementById(idOrBtn + '-result');
+    } else {
+      widget = idOrBtn.closest('.cp-widget');
+      input = widget.querySelector('.cp-input');
+      result = widget.querySelector('.cp-wallet-result');
+    }
+    if (!input || !result) return;
+
     var address = input.value.trim();
     if (!address || !address.startsWith('0x')) {
       result.innerHTML = '<p style="color:#ef4444;padding:8px 0">Enter a valid wallet address (0x...)</p>';
       return;
     }
 
-    var base = (window.CryptoPulseWP && CryptoPulseWP.baseUrl) || 'https://cryptopulse.uno';
-    var key = (window.CryptoPulseWP && CryptoPulseWP.apiKey) || '';
-    var headers = { 'Content-Type': 'application/json' };
-    if (key) headers['x-api-key'] = key;
+    result.innerHTML = '<p style="opacity:0.5;padding:8px 0">🔍 Scanning 34+ chains...</p>';
 
-    result.innerHTML = '<p style="opacity:0.5;padding:8px 0">Loading...</p>';
-
-    fetch(base + '/api/wallet/' + address + '?multichain=true', { headers: headers })
+    fetch(BASE + '/api/wallet/' + address + '?multichain=true', { headers: getHeaders() })
       .then(function(r) { return r.json(); })
       .then(function(data) {
         if (!data || data.error) {
@@ -35,32 +48,19 @@
         if (data.transactions && data.transactions.length > 0) {
           html += '<p style="margin-top:8px;font-weight:600">Recent Activity:</p>';
           data.transactions.slice(0, 5).forEach(function(tx) {
+            var usd = tx.valueUSD ? '$' + Number(tx.valueUSD).toLocaleString() : '';
             html += '<div style="font-size:12px;padding:4px 0;border-bottom:1px solid rgba(128,128,128,0.1)">';
-            html += tx.type.toUpperCase() + ' ' + (tx.value || '') + ' ' + (tx.tokenSymbol || '') + ' ($' + (tx.valueUSD || 0).toLocaleString() + ')';
+            html += (tx.type || 'transfer').toUpperCase() + ' ' + (tx.value || '') + ' ' + (tx.tokenSymbol || '');
+            if (usd) html += ' (' + usd + ')';
             html += '</div>';
           });
         }
-        html += '<p style="margin-top:8px"><a href="' + base + '/dashboard" target="_blank" style="color:#7c3aed">Full analysis →</a></p>';
+        html += '<p style="margin-top:8px"><a href="' + BASE + '/dashboard" target="_blank" style="color:#7c3aed">Full analysis →</a></p>';
         html += '</div>';
         result.innerHTML = html;
       })
-      .catch(function() {
-        result.innerHTML = '<p style="color:#ef4444;padding:8px 0">Error fetching wallet data</p>';
+      .catch(function(err) {
+        result.innerHTML = '<p style="color:#ef4444;padding:8px 0">Error: ' + err.message + '</p>';
       });
   };
-
-  // Auto-refresh for whale feeds
-  document.querySelectorAll('.cp-widget[data-refresh]').forEach(function(el) {
-    var interval = parseInt(el.getAttribute('data-refresh')) || 60;
-    var endpoint = el.getAttribute('data-endpoint');
-    if (!endpoint) return;
-
-    setInterval(function() {
-      var base = (window.CryptoPulseWP && CryptoPulseWP.baseUrl) || 'https://cryptopulse.uno';
-      var key = (window.CryptoPulseWP && CryptoPulseWP.apiKey) || '';
-      var headers = { 'Content-Type': 'application/json' };
-      if (key) headers['x-api-key'] = key;
-      // Refresh handled by page reload or AJAX (future enhancement)
-    }, interval * 1000);
-  });
 })();
