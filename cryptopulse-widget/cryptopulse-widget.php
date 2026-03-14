@@ -3,7 +3,7 @@
  * Plugin Name: CryptoPulse Whale Alerts
  * Plugin URI: https://cryptopulse.uno
  * Description: Display real-time whale wallet movements from 34+ EVM chains on your WordPress site.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: CryptoPulse
  * Author URI: https://cryptopulse.uno
  * License: GPL v2 or later
@@ -12,7 +12,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('CRYPTOPULSE_VERSION', '1.1.0');
+define('CRYPTOPULSE_VERSION', '1.2.0');
 define('CRYPTOPULSE_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('CRYPTOPULSE_PLUGIN_URL', plugin_dir_url(__FILE__));
 
@@ -34,14 +34,14 @@ function cryptopulse_settings_page() {
     if (isset($_POST['cp_test_api'])) {
         check_admin_referer('cp_test_nonce');
         $test_data = cryptopulse_api_get('/api/whales?limit=1');
-        $test_result = $test_data ? 'success' : 'failed';
+        $test_result = $test_data && !empty($test_data['transactions']) ? 'success' : 'failed';
     }
     ?>
     <div class="wrap">
         <h1>CryptoPulse Settings</h1>
         
         <?php if ($test_result === 'success'): ?>
-            <div class="notice notice-success"><p>✅ API connection successful!</p></div>
+            <div class="notice notice-success"><p>✅ API connection successful! Whale data is flowing.</p></div>
         <?php elseif ($test_result === 'failed'): ?>
             <div class="notice notice-error"><p>❌ API connection failed. Check error logs: wp-content/debug.log</p></div>
         <?php endif; ?>
@@ -49,7 +49,7 @@ function cryptopulse_settings_page() {
         <form method="post" action="options.php">
             <?php settings_fields('cryptopulse_options'); ?>
             <table class="form-table">
-                <tr><th>API Key</th><td><input type="text" name="cryptopulse_api_key" value="<?php echo esc_attr($api_key); ?>" class="regular-text" /><p class="description">Get your free key at <a href="https://cryptopulse.uno/pricing" target="_blank">cryptopulse.uno/pricing</a></p></td></tr>
+                <tr><th>API Key (optional)</th><td><input type="text" name="cryptopulse_api_key" value="<?php echo esc_attr($api_key); ?>" class="regular-text" /><p class="description">Free tier works without a key. Get a Pro key at <a href="https://cryptopulse.uno/pricing" target="_blank">cryptopulse.uno/pricing</a></p></td></tr>
                 <tr><th>Base URL</th><td><input type="text" name="cryptopulse_base_url" value="<?php echo esc_attr($base_url); ?>" class="regular-text" /><p class="description">Default: https://cryptopulse.uno</p></td></tr>
             </table>
             <?php submit_button(); ?>
@@ -63,27 +63,19 @@ function cryptopulse_settings_page() {
         
         <h2>Shortcodes</h2>
         <table class="widefat" style="max-width:700px">
-            <tr><td><code>[cryptopulse_whales]</code></td><td>Live whale feed with all chains</td></tr>
-            <tr><td><code>[cryptopulse_whales chain="ethereum" limit="10"]</code></td><td>Ethereum only, 10 items</td></tr>
-            <tr><td><code>[cryptopulse_whales period="7d" theme="light"]</code></td><td>7-day period, light theme</td></tr>
-            <tr><td><code>[cryptopulse_wallet]</code></td><td>Wallet lookup search box</td></tr>
-            <tr><td><code>[cryptopulse_market]</code></td><td>Market overview (cap, volume, fear/greed)</td></tr>
-            <tr><td><code>[cryptopulse_dex]</code></td><td>DEX swap feed</td></tr>
+            <tr><td><code>[cryptopulse_whales]</code></td><td>Live whale feed — all chains, 10 items</td></tr>
+            <tr><td><code>[cryptopulse_whales chain="ethereum" limit="10" period="7d" theme="dark"]</code></td><td>Ethereum only, 7-day window</td></tr>
+            <tr><td><code>[cryptopulse_wallet]</code></td><td>Interactive wallet lookup search box</td></tr>
+            <tr><td><code>[cryptopulse_market]</code></td><td>Market overview (prices, fear/greed)</td></tr>
+            <tr><td><code>[cryptopulse_dex chain="polygon" period="24h"]</code></td><td>DEX swap feed</td></tr>
             <tr><td><code>[cryptopulse_bot]</code></td><td>Alpha Bot performance card</td></tr>
         </table>
         
-        <h2>Troubleshooting</h2>
-        <ul>
-            <li><strong>No whale data?</strong> Check error logs (Enable WP_DEBUG in wp-config.php) or use Test API button above</li>
-            <li><strong>Shortcodes not showing?</strong> Make sure plugin is activated in Plugins menu</li>
-            <li><strong>SSL errors?</strong> The plugin auto-skips SSL verification</li>
-            <li><strong>Network blocked?</strong> Your WordPress server may not be able to reach cryptopulse.uno. Contact your host.</li>
-        </ul>
-        
         <h2>🧪 Diagnostic Info</h2>
-        <p>WordPress can access remote URLs: <?php echo (function_exists('wp_remote_get') ? '✅ Yes' : '❌ No'); ?></p>
-        <p>cURL installed: <?php echo (function_exists('curl_version') ? '✅ Yes' : '❌ No'); ?></p>
-        <p>PHP allow_url_fopen: <?php echo (ini_get('allow_url_fopen') ? '✅ Yes' : '❌ No'); ?></p>
+        <p>WordPress HTTP API: <?php echo (function_exists('wp_remote_get') ? '✅ Available' : '❌ Missing'); ?></p>
+        <p>cURL: <?php echo (function_exists('curl_version') ? '✅ v' . curl_version()['version'] : '❌ Missing'); ?></p>
+        <p>allow_url_fopen: <?php echo (ini_get('allow_url_fopen') ? '✅ On' : '❌ Off'); ?></p>
+        <p>PHP version: <?php echo phpversion(); ?></p>
     </div>
     <?php
 }
@@ -98,73 +90,73 @@ add_action('wp_enqueue_scripts', function() {
     ]);
 });
 
-// === API HELPER ===
+// === API HELPER (wp_remote_get + cURL fallback) ===
 function cryptopulse_api_get($path) {
     $base = rtrim(get_option('cryptopulse_base_url', 'https://cryptopulse.uno'), '/');
     $key = get_option('cryptopulse_api_key', '');
+    $url = $base . $path;
+    
     $headers = [
         'Content-Type' => 'application/json',
         'User-Agent' => 'CryptoPulse-WP/' . CRYPTOPULSE_VERSION,
     ];
-    if ($key) $headers['x-api-key'] = $key;
+    if ($key) $headers['Authorization'] = 'Bearer ' . $key;
 
-    $args = [
+    // Method 1: wp_remote_get
+    $response = wp_remote_get($url, [
         'headers' => $headers,
         'timeout' => 15,
-        'sslverify' => false,  // Handle SSL issues
-        'blocking' => true,
-    ];
-
-    // Try wp_remote_get first
-    $response = wp_remote_get($base . $path, $args);
+        'sslverify' => false,
+    ]);
     
-    if (is_wp_error($response)) {
-        error_log('CryptoPulse WP Error: ' . $response->get_error_message() . ' | Trying cURL fallback...');
-        
-        // Fallback: Direct cURL if wp_remote_get fails
-        if (function_exists('curl_init')) {
-            $ch = curl_init();
-            curl_setopt_array($ch, [
-                CURLOPT_URL => $base . $path,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_TIMEOUT => 15,
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_SSL_VERIFYHOST => false,
-                CURLOPT_HTTPHEADER => array_map(fn($k, $v) => "$k: $v", array_keys($headers), $headers),
-                CURLOPT_USERAGENT => 'CryptoPulse-WP/' . CRYPTOPULSE_VERSION,
-            ]);
-            $body = curl_exec($ch);
-            $curl_error = curl_error($ch);
-            curl_close($ch);
-            
-            if ($curl_error) {
-                error_log('CryptoPulse cURL Error: ' . $curl_error . ' | Path: ' . $path);
-                return null;
-            }
-        } else {
-            return null;
-        }
-    } else {
+    if (!is_wp_error($response)) {
         $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+        if ($data) return $data;
+        error_log('CryptoPulse: Invalid JSON from wp_remote_get: ' . substr($body, 0, 200));
+    } else {
+        error_log('CryptoPulse: wp_remote_get failed: ' . $response->get_error_message());
     }
 
-    $data = json_decode($body, true);
-    
-    if (!$data) {
-        error_log('CryptoPulse API Invalid JSON: ' . substr($body, 0, 200) . ' | Path: ' . $path);
+    // Method 2: cURL fallback
+    if (function_exists('curl_init')) {
+        $ch = curl_init();
+        $curl_headers = [];
+        foreach ($headers as $k => $v) $curl_headers[] = "$k: $v";
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 15,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+            CURLOPT_HTTPHEADER => $curl_headers,
+        ]);
+        $body = curl_exec($ch);
+        $err = curl_error($ch);
+        curl_close($ch);
+        
+        if (!$err && $body) {
+            $data = json_decode($body, true);
+            if ($data) return $data;
+        }
+        if ($err) error_log('CryptoPulse: cURL failed: ' . $err);
     }
-    
-    return $data;
+
+    return null;
 }
 
 function cryptopulse_format_usd($val) {
+    if (!$val || !is_numeric($val)) return '$0';
+    $val = floatval($val);
+    if ($val >= 1000000000) return '$' . number_format($val / 1000000000, 2) . 'B';
     if ($val >= 1000000) return '$' . number_format($val / 1000000, 2) . 'M';
-    if ($val >= 1000) return '$' . number_format($val / 1000, 2) . 'K';
+    if ($val >= 1000) return '$' . number_format($val / 1000, 1) . 'K';
     return '$' . number_format($val, 2);
 }
 
 function cryptopulse_time_ago($ts) {
-    $diff = time() - $ts;
+    $diff = time() - intval($ts);
+    if ($diff < 0) $diff = 0;
     if ($diff < 60) return $diff . 's ago';
     if ($diff < 3600) return floor($diff / 60) . 'm ago';
     if ($diff < 86400) return floor($diff / 3600) . 'h ago';
@@ -187,7 +179,7 @@ add_shortcode('cryptopulse_whales', function($atts) {
     $txns = $data['transactions'] ?? [];
 
     if (empty($txns)) {
-        return '<div class="cp-widget cp-' . esc_attr($atts['theme']) . '"><div class="cp-header">🐋 Whale Feed</div><p class="cp-empty">No whale data for this period. Try a longer timeframe.</p></div>';
+        return '<div class="cp-widget cp-' . esc_attr($atts['theme']) . '"><div class="cp-header">🐋 Whale Feed</div><p class="cp-empty">No whale data available. <a href="https://cryptopulse.uno" target="_blank">Check API status</a></p></div>';
     }
 
     $html = '<div class="cp-widget cp-' . esc_attr($atts['theme']) . '">';
@@ -197,17 +189,17 @@ add_shortcode('cryptopulse_whales', function($atts) {
         $type = strtoupper($tx['type'] ?? 'transfer');
         $icon = ($tx['type'] === 'buy') ? '🟢' : (($tx['type'] === 'sell') ? '🔴' : '🟡');
         $value = cryptopulse_format_usd($tx['valueUSD'] ?? 0);
-        $token = esc_html($tx['tokenSymbol'] ?? '?');
+        $token = esc_html($tx['tokenSymbol'] ?? $tx['tokenName'] ?? '?');
         $chain = esc_html($tx['chainName'] ?? $tx['chain'] ?? '');
-        $from = esc_html($tx['fromLabel'] ?? substr($tx['from'] ?? '', 0, 6) . '...' . substr($tx['from'] ?? '', -4));
-        $to = esc_html($tx['toLabel'] ?? substr($tx['to'] ?? '', 0, 6) . '...' . substr($tx['to'] ?? '', -4));
+        $from = esc_html($tx['fromLabel'] ?? (isset($tx['from']) ? substr($tx['from'], 0, 6) . '...' . substr($tx['from'], -4) : '?'));
+        $to = esc_html($tx['toLabel'] ?? (isset($tx['to']) && $tx['to'] ? substr($tx['to'], 0, 6) . '...' . substr($tx['to'], -4) : '?'));
         $time = isset($tx['timestamp']) ? cryptopulse_time_ago($tx['timestamp']) : '';
         $explorer = esc_url($tx['explorerUrl'] ?? '');
 
         $html .= '<div class="cp-tx cp-tx-' . esc_attr($tx['type'] ?? 'transfer') . '">';
         $html .= '<div class="cp-tx-icon">' . $icon . '</div>';
         $html .= '<div class="cp-tx-body">';
-        $html .= '<div class="cp-tx-main"><strong>' . $type . '</strong> ' . esc_html($tx['value'] ?? '') . ' ' . $token . ' <span class="cp-muted">(' . $value . ')</span></div>';
+        $html .= '<div class="cp-tx-main"><strong>' . $type . '</strong> ' . $token . ' <span class="cp-muted">(' . $value . ')</span></div>';
         $html .= '<div class="cp-tx-meta">' . $from . ' → ' . $to;
         if ($chain) $html .= ' <span class="cp-chain">• ' . $chain . '</span>';
         $html .= '</div>';
@@ -230,10 +222,10 @@ add_shortcode('cryptopulse_wallet', function($atts) {
     $id = 'cp-wallet-' . wp_rand();
     $html = '<div class="cp-widget cp-' . esc_attr($atts['theme']) . '" id="' . $id . '">';
     $html .= '<div class="cp-header">🔍 Wallet Lookup</div>';
-    $html .= '<div class="cp-search"><input type="text" placeholder="Enter wallet address (0x...)" class="cp-input" />';
-    $html .= '<button class="cp-btn" onclick="cryptopulseLookup(this)">Look Up</button></div>';
-    $html .= '<div class="cp-wallet-result"></div>';
-    $html .= '<div class="cp-footer">Scans 34+ chains · <a href="https://cryptopulse.uno" target="_blank">CryptoPulse</a></div>';
+    $html .= '<div class="cp-search"><input type="text" placeholder="Enter wallet address (0x...)" class="cp-input" id="' . $id . '-input" />';
+    $html .= '<button class="cp-btn" onclick="cryptopulseLookup(\'' . $id . '\')">Look Up</button></div>';
+    $html .= '<div class="cp-wallet-result" id="' . $id . '-result"></div>';
+    $html .= '<div class="cp-footer">Scans 34+ EVM chains · <a href="https://cryptopulse.uno" target="_blank">CryptoPulse</a></div>';
     $html .= '</div>';
     return $html;
 });
@@ -242,29 +234,38 @@ add_shortcode('cryptopulse_wallet', function($atts) {
 add_shortcode('cryptopulse_market', function($atts) {
     $atts = shortcode_atts(['theme' => 'dark'], $atts);
     $data = cryptopulse_api_get('/api/market');
-    if (!$data || !isset($data['overview'])) return '<div class="cp-widget cp-' . esc_attr($atts['theme']) . '"><p class="cp-empty">Market data unavailable.</p></div>';
+    if (!$data) return '<div class="cp-widget cp-' . esc_attr($atts['theme']) . '"><p class="cp-empty">Market data unavailable.</p></div>';
 
-    $o = $data['overview'];
+    $o = $data['overview'] ?? [];
     $html = '<div class="cp-widget cp-' . esc_attr($atts['theme']) . '">';
     $html .= '<div class="cp-header">📊 Market Overview</div>';
     $html .= '<div class="cp-stats">';
-    $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Market Cap</div><div class="cp-stat-value">' . esc_html($o['marketCap'] ?? 'N/A') . '</div></div>';
-    $html .= '<div class="cp-stat-card"><div class="cp-stat-label">24h Volume</div><div class="cp-stat-value">' . esc_html($o['volume'] ?? 'N/A') . '</div></div>';
-    $html .= '<div class="cp-stat-card"><div class="cp-stat-label">BTC Dominance</div><div class="cp-stat-value">' . esc_html($o['btcDominance'] ?? 'N/A') . '</div></div>';
-    if (isset($o['fearGreed'])) {
-        $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Fear/Greed</div><div class="cp-stat-value">' . esc_html($o['fearGreed']) . '</div></div>';
-    }
+
+    // Handle both field name formats (totalMarketCap or marketCap)
+    $mcap = $o['totalMarketCap'] ?? $o['marketCap'] ?? 0;
+    $vol = $o['totalVolume24h'] ?? $o['volume'] ?? 0;
+    $btcDom = $o['btcDominance'] ?? 0;
+    $fgi = $o['fearGreedIndex'] ?? $o['fearGreed'] ?? null;
+    $fgLabel = $o['fearGreedLabel'] ?? '';
+
+    if ($mcap > 0) $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Market Cap</div><div class="cp-stat-value">' . cryptopulse_format_usd($mcap) . '</div></div>';
+    if ($vol > 0) $html .= '<div class="cp-stat-card"><div class="cp-stat-label">24h Volume</div><div class="cp-stat-value">' . cryptopulse_format_usd($vol) . '</div></div>';
+    if ($btcDom > 0) $html .= '<div class="cp-stat-card"><div class="cp-stat-label">BTC Dominance</div><div class="cp-stat-value">' . number_format($btcDom, 1) . '%</div></div>';
+    if ($fgi !== null) $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Fear/Greed</div><div class="cp-stat-value">' . intval($fgi) . ($fgLabel ? " ($fgLabel)" : '') . '</div></div>';
     $html .= '</div>';
 
     // Prices
-    if (!empty($data['prices'])) {
+    $prices = $data['prices'] ?? [];
+    if (!empty($prices)) {
         $html .= '<div class="cp-prices">';
-        foreach (array_slice($data['prices'], 0, 5) as $coin) {
-            $change = $coin['change24h'] ?? 0;
+        foreach (array_slice($prices, 0, 10) as $coin) {
+            $symbol = esc_html($coin['symbol'] ?? '');
+            $price = floatval($coin['price'] ?? $coin['current_price'] ?? 0);
+            $change = floatval($coin['change24h'] ?? $coin['price_change_percentage_24h'] ?? 0);
             $color = $change >= 0 ? '#10b981' : '#ef4444';
             $html .= '<div class="cp-price-row">';
-            $html .= '<span>' . esc_html($coin['symbol'] ?? '') . '</span>';
-            $html .= '<span>$' . number_format($coin['price'] ?? 0, 2) . '</span>';
+            $html .= '<span class="cp-price-symbol">' . $symbol . '</span>';
+            $html .= '<span class="cp-price-val">$' . number_format($price, $price < 1 ? 6 : 2) . '</span>';
             $html .= '<span style="color:' . $color . '">' . ($change >= 0 ? '+' : '') . number_format($change, 1) . '%</span>';
             $html .= '</div>';
         }
@@ -284,17 +285,36 @@ add_shortcode('cryptopulse_dex', function($atts) {
 
     $data = cryptopulse_api_get($path);
     $swaps = $data['swaps'] ?? [];
-    if (empty($swaps)) return '<div class="cp-widget cp-' . esc_attr($atts['theme']) . '"><div class="cp-header">🔄 DEX Swaps</div><p class="cp-empty">No DEX swaps found.</p></div>';
+    
+    if (empty($swaps)) {
+        $msg = $atts['chain'] ? 'No DEX swaps found for ' . esc_html($atts['chain']) . '. Try removing the chain filter.' : 'No DEX swaps found.';
+        return '<div class="cp-widget cp-' . esc_attr($atts['theme']) . '"><div class="cp-header">🔄 DEX Swaps</div><p class="cp-empty">' . $msg . '</p></div>';
+    }
 
+    $total = $data['total'] ?? count($swaps);
     $html = '<div class="cp-widget cp-' . esc_attr($atts['theme']) . '">';
-    $html .= '<div class="cp-header"><span>🔄 DEX Swaps</span><span class="cp-badge">' . count($swaps) . '</span></div>';
+    $html .= '<div class="cp-header"><span>🔄 DEX Swaps</span><span class="cp-badge">' . number_format($total) . ' total</span></div>';
 
     foreach (array_slice($swaps, 0, intval($atts['limit'])) as $s) {
+        $tokenIn = esc_html($s['tokenIn'] ?? $s['token_in'] ?? '?');
+        $tokenOut = esc_html($s['tokenOut'] ?? $s['token_out'] ?? '?');
+        $value = cryptopulse_format_usd($s['valueUSD'] ?? $s['usd_value'] ?? 0);
+        $wallet = esc_html($s['walletLabel'] ?? (isset($s['wallet']) ? substr($s['wallet'], 0, 10) . '...' : '?'));
+        $dex = esc_html($s['dex'] ?? $s['protocol'] ?? '');
+        $chain = esc_html($s['chainName'] ?? $s['chain'] ?? '');
+        $time = isset($s['timestamp']) ? cryptopulse_time_ago($s['timestamp']) : '';
+
         $html .= '<div class="cp-tx">';
+        $html .= '<div class="cp-tx-icon">🔄</div>';
         $html .= '<div class="cp-tx-body">';
-        $html .= '<div class="cp-tx-main">' . esc_html($s['tokenIn'] ?? '?') . ' → ' . esc_html($s['tokenOut'] ?? '?') . ' <span class="cp-muted">(' . cryptopulse_format_usd($s['valueUSD'] ?? 0) . ')</span></div>';
-        $html .= '<div class="cp-tx-meta">' . esc_html($s['walletLabel'] ?? substr($s['wallet'] ?? '', 0, 10) . '...') . ' on ' . esc_html($s['dex'] ?? '') . '</div>';
-        $html .= '</div></div>';
+        $html .= '<div class="cp-tx-main">' . $tokenIn . ' → ' . $tokenOut . ' <span class="cp-muted">(' . $value . ')</span></div>';
+        $html .= '<div class="cp-tx-meta">' . $wallet;
+        if ($dex) $html .= ' on ' . $dex;
+        if ($chain) $html .= ' <span class="cp-chain">• ' . $chain . '</span>';
+        $html .= '</div>';
+        $html .= '</div>';
+        if ($time) $html .= '<div class="cp-tx-right"><div class="cp-time">' . $time . '</div></div>';
+        $html .= '</div>';
     }
 
     $html .= '<div class="cp-footer">Powered by <a href="https://cryptopulse.uno" target="_blank">CryptoPulse</a></div></div>';
@@ -305,18 +325,47 @@ add_shortcode('cryptopulse_dex', function($atts) {
 add_shortcode('cryptopulse_bot', function($atts) {
     $atts = shortcode_atts(['theme' => 'dark'], $atts);
     $data = cryptopulse_api_get('/api/bot/status');
-    if (!$data || !isset($data['performance'])) return '<div class="cp-widget cp-' . esc_attr($atts['theme']) . '"><p class="cp-empty">Bot status unavailable.</p></div>';
+    if (!$data) return '<div class="cp-widget cp-' . esc_attr($atts['theme']) . '"><p class="cp-empty">Bot status unavailable.</p></div>';
 
-    $p = $data['performance'];
+    $p = $data['performance'] ?? [];
+    // Handle both camelCase (API) and snake_case field names
+    $pnl = $p['totalPnl'] ?? $p['total_pnl_pct'] ?? 0;
+    $wr = $p['winRate'] ?? $p['win_rate'] ?? 0;
+    $dd = $p['maxDrawdown'] ?? $p['max_drawdown_pct'] ?? 0;
+    $sharpe = $p['sharpeRatio'] ?? $p['sharpe_ratio'] ?? 0;
+    $pf = $p['profitFactor'] ?? $p['profit_factor'] ?? 0;
+    $trades = $p['totalTrades'] ?? $p['total_trades'] ?? 0;
+    $version = esc_html($data['version'] ?? '');
+    $asset = esc_html($data['asset'] ?? '');
+
     $html = '<div class="cp-widget cp-' . esc_attr($atts['theme']) . '">';
-    $html .= '<div class="cp-header">🤖 Alpha Bot ' . esc_html($data['version'] ?? '') . '</div>';
-    $html .= '<div class="cp-stats">';
-    $html .= '<div class="cp-stat-card"><div class="cp-stat-label">P&L</div><div class="cp-stat-value" style="color:#10b981">+' . number_format($p['total_pnl_pct'] ?? 0, 2) . '%</div></div>';
-    $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Win Rate</div><div class="cp-stat-value">' . number_format($p['win_rate'] ?? 0, 1) . '%</div></div>';
-    $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Max DD</div><div class="cp-stat-value">' . number_format($p['max_drawdown_pct'] ?? 0, 2) . '%</div></div>';
-    $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Sharpe</div><div class="cp-stat-value">' . number_format($p['sharpe_ratio'] ?? 0, 2) . '</div></div>';
+    $html .= '<div class="cp-header"><span>🤖 Alpha Bot ' . $version . '</span>';
+    if ($asset) $html .= '<span class="cp-badge">' . $asset . '</span>';
     $html .= '</div>';
-    $html .= '<div class="cp-footer"><a href="https://cryptopulse.uno/bot" target="_blank">View signals →</a></div>';
+    $html .= '<div class="cp-stats">';
+    $html .= '<div class="cp-stat-card"><div class="cp-stat-label">P&L</div><div class="cp-stat-value" style="color:#10b981">+' . number_format($pnl, 2) . '%</div></div>';
+    $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Win Rate</div><div class="cp-stat-value">' . number_format($wr, 1) . '%</div></div>';
+    $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Max DD</div><div class="cp-stat-value" style="color:#ef4444">' . number_format($dd, 2) . '%</div></div>';
+    $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Sharpe</div><div class="cp-stat-value">' . number_format($sharpe, 2) . '</div></div>';
+    $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Profit Factor</div><div class="cp-stat-value">' . number_format($pf, 2) . '</div></div>';
+    $html .= '<div class="cp-stat-card"><div class="cp-stat-label">Trades</div><div class="cp-stat-value">' . intval($trades) . '</div></div>';
+    $html .= '</div>';
+
+    // Evolution history
+    $evo = $data['evolution']['history'] ?? [];
+    if (!empty($evo)) {
+        $html .= '<div class="cp-evo"><div class="cp-evo-title">📈 Evolution History</div>';
+        foreach (array_reverse($evo) as $v) {
+            $html .= '<div class="cp-evo-row">';
+            $html .= '<span class="cp-evo-ver">' . esc_html($v['version'] ?? '') . '</span>';
+            $html .= '<span style="color:#10b981">+' . number_format($v['pnl'] ?? 0, 2) . '%</span>';
+            $html .= '<span>' . number_format($v['winRate'] ?? 0, 1) . '% WR</span>';
+            $html .= '</div>';
+        }
+        $html .= '</div>';
+    }
+
+    $html .= '<div class="cp-footer"><a href="https://cryptopulse.uno/bot" target="_blank">View live signals →</a></div>';
     $html .= '</div>';
     return $html;
 });
@@ -324,7 +373,7 @@ add_shortcode('cryptopulse_bot', function($atts) {
 // === WIDGET CLASS ===
 class CryptoPulse_Widget extends WP_Widget {
     public function __construct() {
-        parent::__construct('cryptopulse_widget', 'CryptoPulse Whales', ['description' => 'Show recent whale movements']);
+        parent::__construct('cryptopulse_widget', 'CryptoPulse Whales', ['description' => 'Show recent whale movements from 34+ chains']);
     }
 
     public function widget($args, $instance) {
