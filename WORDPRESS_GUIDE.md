@@ -98,7 +98,7 @@ Go to **WordPress Admin → Settings → CryptoPulse**:
 
 ## Features
 
-✅ 19 chains supported  
+✅ 13 chains supported  
 ✅ Real-time whale movements  
 ✅ Wallet multichain lookup  
 ✅ Market overview (cap, volume, fear/greed)  
