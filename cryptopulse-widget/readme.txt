@@ -7,7 +7,7 @@ Requires PHP: 7.4
 Stable tag: 1.2.0
 License: GPLv2 or later
 
-Display real-time whale wallet movements, market data, DEX swaps, and AI bot performance from 13 EVM chains on your WordPress site.
+Display real-time whale wallet movements, market data, DEX swaps, and AI bot performance from 17 EVM chains on your WordPress site.
 
 == Description ==
 
@@ -15,7 +15,7 @@ CryptoPulse brings real-time crypto intelligence to your WordPress site.
 
 Features:
 * Real-time whale movement tracking (95K+ movements)
-* 13 EVM chains supported
+* 17 EVM chains supported
 * Market overview with Fear/Greed Index
 * DEX swap feed
 * Alpha Bot performance card

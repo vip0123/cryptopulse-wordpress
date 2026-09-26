@@ -2,7 +2,7 @@
 /**
  * Plugin Name: CryptoPulse Whale Alerts
  * Plugin URI: https://cryptopulse.uno
- * Description: Display real-time whale wallet movements from 13 EVM chains on your WordPress site.
+ * Description: Display real-time whale wallet movements from 17 EVM chains on your WordPress site.
  * Version: 1.2.0
  * Author: CryptoPulse
  * Author URI: https://cryptopulse.uno
@@ -225,7 +225,7 @@ add_shortcode('cryptopulse_wallet', function($atts) {
     $html .= '<div class="cp-search"><input type="text" placeholder="Enter wallet address (0x...)" class="cp-input" id="' . $id . '-input" />';
     $html .= '<button class="cp-btn" onclick="cryptopulseLookup(\'' . $id . '\')">Look Up</button></div>';
     $html .= '<div class="cp-wallet-result" id="' . $id . '-result"></div>';
-    $html .= '<div class="cp-footer">Scans 13 EVM chains · <a href="https://cryptopulse.uno" target="_blank">CryptoPulse</a></div>';
+    $html .= '<div class="cp-footer">Scans 17 EVM chains · <a href="https://cryptopulse.uno" target="_blank">CryptoPulse</a></div>';
     $html .= '</div>';
     return $html;
 });
@@ -403,7 +403,7 @@ add_shortcode('cryptopulse_bot', function($atts) {
 // === WIDGET CLASS ===
 class CryptoPulse_Widget extends WP_Widget {
     public function __construct() {
-        parent::__construct('cryptopulse_widget', 'CryptoPulse Whales', ['description' => 'Show recent whale movements from 13 chains']);
+        parent::__construct('cryptopulse_widget', 'CryptoPulse Whales', ['description' => 'Show recent whale movements from 17 chains']);
     }
 
     public function widget($args, $instance) {

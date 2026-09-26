@@ -31,7 +31,7 @@
       return;
     }
 
-    result.innerHTML = '<p style="opacity:0.5;padding:8px 0">🔍 Scanning 13 chains...</p>';
+    result.innerHTML = '<p style="opacity:0.5;padding:8px 0">🔍 Scanning 17 chains...</p>';
 
     fetch(BASE + '/api/wallet/' + address + '?multichain=true', { headers: getHeaders() })
       .then(function(r) { return r.json(); })
